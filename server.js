@@ -173,20 +173,11 @@ app.use('/api/clob', createProxyMiddleware({
 }));
 
 // Binance API 代理
-app.use('/api/binance', async (req, res) => {
-  try {
-    const url = `https://api.binance.com${req.url.replace(/^\/api\/binance/, '')}`;
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const data = await response.text();
-    res.status(response.status)
-       .set('Content-Type', response.headers.get('content-type') || 'application/json')
-       .send(data);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
+app.use('/api/binance', createProxyMiddleware({
+  target: 'https://data-api.binance.vision',
+  changeOrigin: true,
+  pathRewrite: { '^/api/binance': '' },
+}));
 
 // Polymarket Data API 代理（仓位等）
 app.use('/api/data', createProxyMiddleware({
@@ -276,6 +267,111 @@ async function fetchMaticBalance(address) {
   }
   return 0;
 }
+
+// ===== 聚合接口：一次返回所有市场数据 =====
+const BINANCE_SYMBOLS = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
+const MARKET_ASSETS = ['btc', 'eth', 'sol', 'xrp'];
+
+async function safeFetchJson(url) {
+  try {
+    const r = await fetch(url);
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+
+app.get('/api/markets/all', async (req, res) => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const windowTs = Math.floor(nowSec / 300) * 300;
+
+  try {
+    const assetResults = await Promise.all(MARKET_ASSETS.map(async (asset) => {
+      const slug = `${asset}-updown-5m-${windowTs}`;
+      const symbol = BINANCE_SYMBOLS[asset];
+
+      const [marketData, priceData, klineData] = await Promise.all([
+        safeFetchJson(`https://gamma-api.polymarket.com/markets/slug/${slug}`),
+        safeFetchJson(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`),
+        safeFetchJson(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&startTime=${windowTs * 1000}&limit=1`),
+      ]);
+
+      const market = Array.isArray(marketData) ? marketData[0] : marketData;
+      const currentPrice = priceData?.price ? parseFloat(priceData.price) : null;
+      const priceToBeat = (Array.isArray(klineData) && klineData[0]) ? parseFloat(klineData[0][1]) : null;
+
+      let tokenIds = [];
+      try { tokenIds = JSON.parse(market?.clobTokenIds ?? '[]'); } catch {}
+
+      const books = await Promise.all(
+        tokenIds.map((id) => safeFetchJson(`https://clob.polymarket.com/book?token_id=${id}`))
+      );
+
+      const orderBooks = {};
+      tokenIds.forEach((id, i) => { if (books[i]) orderBooks[id] = books[i]; });
+
+      return { asset, market, currentPrice, priceToBeat, orderBooks, tokenIds };
+    }));
+
+    res.json({ windowTs, assets: assetResults });
+  } catch (err) {
+    console.error('[markets/all] Error:', err?.message);
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// 批量获取所有资产 K 线历史（路数/records）
+const HISTORY_RECORD_COUNT = 20;
+
+app.get('/api/kline-history', async (req, res) => {
+  try {
+    const nowMs = Date.now();
+    const endTime = Math.floor(nowMs / 300_000) * 300_000;
+    const startTime = endTime - (HISTORY_RECORD_COUNT + 1) * 300_000;
+
+    const results = await Promise.all(
+      MARKET_ASSETS.map(async (asset) => {
+        const symbol = BINANCE_SYMBOLS[asset];
+        const klines = await safeFetchJson(
+          `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=5m&startTime=${startTime}&endTime=${endTime}&limit=${HISTORY_RECORD_COUNT + 1}`
+        );
+        if (!Array.isArray(klines)) return { asset, records: [] };
+
+        const closed = klines.filter((k) => k[6] < nowMs);
+        const recent = closed.slice(-HISTORY_RECORD_COUNT);
+        const records = recent.map((k) => ({
+          ts: Math.floor(k[0] / 1000),
+          result: parseFloat(k[4]) - parseFloat(k[1]) >= 0 ? 'up' : 'down',
+          closedTime: new Date(k[6]).toISOString(),
+        }));
+        return { asset, records };
+      })
+    );
+
+    const data = {};
+    for (const { asset, records } of results) data[asset] = records;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// 批量获取所有资产当前价格
+app.get('/api/prices', async (req, res) => {
+  try {
+    const results = await Promise.all(
+      MARKET_ASSETS.map(async (asset) => {
+        const data = await safeFetchJson(
+          `https://api.binance.com/api/v3/ticker/price?symbol=${BINANCE_SYMBOLS[asset]}`
+        );
+        return { asset, price: data?.price ? parseFloat(data.price) : null };
+      })
+    );
+    const prices = {};
+    for (const { asset, price } of results) prices[asset] = price;
+    res.json(prices);
+  } catch (err) {
+    res.status(500).json({ error: err?.message });
+  }
+});
 
 // GET /api/balance?address=0x...
 app.get('/api/balance', async (req, res) => {

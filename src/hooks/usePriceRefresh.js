@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore.js';
 import { ASSETS, PRICE_REFRESH_MS, windowsToTrack, LOOK_BACK, LOOK_AHEAD } from '../utils/market.js';
-import { fetchCurrentPrice } from '../utils/api.js';
+import { fetchAllPrices } from '../utils/api.js';
 
 export function usePriceRefresh() {
   const timer = useRef(null);
@@ -16,13 +16,14 @@ export function usePriceRefresh() {
       const w = windows[0];
       if (w == null) return;
 
-      const prices = await Promise.all(ASSETS.map(fetchCurrentPrice));
+      const prices = await fetchAllPrices();
+      if (!prices) return;
 
       const { marketsCache } = useStore.getState();
-      for (let i = 0; i < ASSETS.length; i++) {
-        const market = marketsCache[ASSETS[i]]?.[w];
-        if (market && prices[i] != null) {
-          setMarket(ASSETS[i], w, { ...market, current_price: prices[i] });
+      for (const asset of ASSETS) {
+        const market = marketsCache[asset]?.[w];
+        if (market && prices[asset] != null) {
+          setMarket(asset, w, { ...market, current_price: prices[asset] });
         }
       }
     };

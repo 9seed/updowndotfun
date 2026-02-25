@@ -58,6 +58,16 @@ export async function fetchCurrentPrice(asset) {
   }
 }
 
+export async function fetchAllPrices() {
+  try {
+    const res = await fetch('/api/prices');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPriceToBeat(asset, eventStartTime) {
   const symbol = BINANCE_SYMBOL_MAP[asset] ?? 'BTCUSDT';
   try {
@@ -97,6 +107,16 @@ export async function fetchActivity(userAddress, type = 'TRADE', limit = 30) {
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
+  }
+}
+
+export async function fetchAllMarkets() {
+  try {
+    const res = await fetch('/api/markets/all');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 

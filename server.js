@@ -177,6 +177,20 @@ app.use('/api/binance', createProxyMiddleware({
   target: 'https://api.binance.com',
   changeOrigin: true,
   pathRewrite: { '^/api/binance': '' },
+  on: {
+    proxyReq: (proxyReq) => {
+      // 清除 Cloudflare 注入的头，避免 Binance 403
+      proxyReq.removeHeader('cf-connecting-ip');
+      proxyReq.removeHeader('cf-ray');
+      proxyReq.removeHeader('cf-visitor');
+      proxyReq.removeHeader('cf-ipcountry');
+      proxyReq.removeHeader('x-forwarded-for');
+      proxyReq.removeHeader('x-forwarded-proto');
+      proxyReq.removeHeader('x-real-ip');
+      proxyReq.removeHeader('referer');
+      proxyReq.removeHeader('origin');
+    }
+  }
 }));
 
 // Polymarket Data API 代理（仓位等）

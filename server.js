@@ -174,7 +174,7 @@ app.use('/api/clob', createProxyMiddleware({
 
 // Binance API 代理
 app.use('/api/binance', createProxyMiddleware({
-  target: 'https://api.binance.com',
+  target: 'https://data-api.binance.vision',
   changeOrigin: true,
   pathRewrite: { '^/api/binance': '' },
   on: {

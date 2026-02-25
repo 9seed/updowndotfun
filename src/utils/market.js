@@ -1,7 +1,7 @@
 export const WINDOW_SEC = 300;
 export const ASSETS = ['btc', 'eth', 'sol', 'xrp'];
 export const LOOK_BACK = 0;
-export const LOOK_AHEAD = 1;
+export const LOOK_AHEAD = 0;
 export const REFRESH_SEC = 3;
 export const PRICE_REFRESH_MS = 3000;
 export const POSITIONS_REFRESH_SEC = 3;

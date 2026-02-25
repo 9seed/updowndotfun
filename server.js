@@ -173,25 +173,20 @@ app.use('/api/clob', createProxyMiddleware({
 }));
 
 // Binance API 代理
-app.use('/api/binance', createProxyMiddleware({
-  target: 'https://data-api.binance.vision',
-  changeOrigin: true,
-  pathRewrite: { '^/api/binance': '' },
-  on: {
-    proxyReq: (proxyReq) => {
-      // 清除 Cloudflare 注入的头，避免 Binance 403
-      proxyReq.removeHeader('cf-connecting-ip');
-      proxyReq.removeHeader('cf-ray');
-      proxyReq.removeHeader('cf-visitor');
-      proxyReq.removeHeader('cf-ipcountry');
-      proxyReq.removeHeader('x-forwarded-for');
-      proxyReq.removeHeader('x-forwarded-proto');
-      proxyReq.removeHeader('x-real-ip');
-      proxyReq.removeHeader('referer');
-      proxyReq.removeHeader('origin');
-    }
+app.use('/api/binance', async (req, res) => {
+  try {
+    const url = `https://api.binance.com${req.url.replace(/^\/api\/binance/, '')}`;
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const data = await response.text();
+    res.status(response.status)
+       .set('Content-Type', response.headers.get('content-type') || 'application/json')
+       .send(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
-}));
+});
 
 // Polymarket Data API 代理（仓位等）
 app.use('/api/data', createProxyMiddleware({
